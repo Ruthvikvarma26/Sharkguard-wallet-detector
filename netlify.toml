@@ -1,0 +1,10 @@
+# Netlify configuration for static frontend
+[build]
+  publish = "web"
+  command = ""
+
+# Optional: redirect root to index.html
+[[redirects]]
+  from = "/"
+  to = "/index.html"
+  status = 200

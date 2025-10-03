@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: sharkguard-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r api/requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
+      # Optional, recommended: set your Netlify domain for strict CORS
+      # - key: FRONTEND_ORIGIN
+      #   value: https://your-site.netlify.app
+      # Optional: server-side Etherscan API key
+      # - key: ETHERSCAN_API_KEY
+      #   sync: false

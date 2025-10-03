@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SharkGuard — Web3 Fake Account Detector</title>
+  <style>
+    :root {
+      --bg:#0b1220; --card:#0f172a; --muted:#9ca3af; --text:#e5e7eb; --accent:#60a5fa;
+      --accent2:#14b8a6; --border:#1f2937; --shadow: rgba(0,0,0,0.35);
+      --success:#16a34a; --warn:#f59e0b; --danger:#ef4444;
+    }
+    body {
+      margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Helvetica, Arial;
+      background: radial-gradient(1200px 600px at 10% 10%, #0b1220 0%, #060a13 40%, #03060c 100%);
+      color: var(--text);
+    }
+    .container { max-width: 1040px; margin: 56px auto; padding: 0 18px; }
+    .card {
+      background: linear-gradient(180deg, rgba(17,24,39,0.75), rgba(17,24,39,0.55));
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px var(--shadow);
+      backdrop-filter: blur(6px);
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(0,0,0,0.45); }
+    h1 { margin: 0 0 8px 0; letter-spacing: .2px; }
+    .muted { color: var(--muted); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .row3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; }
+    input, button {
+      width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border);
+      background: #0b1220; color: var(--text); outline: none; transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(96,165,250,.15); }
+    input::placeholder { color: #6b7280; }
+    button {
+      background: linear-gradient(90deg, #2563eb, #14b8a6); border:0; cursor: pointer; font-weight: 700; letter-spacing:.2px;
+      box-shadow: 0 8px 20px rgba(20,184,166,.25);
+    }
+    button:hover { filter: brightness(1.05); transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-secondary { background: #374151; box-shadow: none; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #0b1220; padding: 14px; border-radius: 12px; border: 1px solid var(--border); }
+    .badge { display:inline-block; padding: 4px 10px; border-radius:999px; font-weight:700; font-size:12px; }
+    .green { background:var(--success); color:#fff; }
+    .orange { background:var(--warn); color:#000; }
+    .red { background:var(--danger); color:#fff; }
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .header { display:flex; align-items:center; justify-content:space-between; }
+    .logo { font-weight:800; font-size:28px; }
+    .shine { background: linear-gradient(90deg, #93c5fd, #6ee7b7, #93c5fd); -webkit-background-clip:text; background-clip:text; color: transparent; }
+    .pill { display:inline-flex; align-items:center; gap:6px; background:#0b1220; border:1px solid var(--border); padding:6px 10px; border-radius:999px; font-size:12px; }
+    /* Loader overlay */
+    #loader { position: fixed; inset:0; display:none; align-items:center; justify-content:center; backdrop-filter: blur(3px); background: rgba(3,6,12,0.35); z-index: 9999; }
+    .spinner { width:44px; height:44px; border:4px solid rgba(255,255,255,0.15); border-top-color:#60a5fa; border-radius:50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* Toast */
+    #toast { position: fixed; right: 18px; bottom: 18px; display: none; min-width: 260px; max-width: 420px; padding: 12px 14px; border-radius: 12px; border:1px solid var(--border); background:#0b1220; color:#e5e7eb; box-shadow: 0 10px 30px var(--shadow); z-index: 99999; }
+    #toast.success { border-color: rgba(22,163,74,.5); }
+    #toast.error { border-color: rgba(239,68,68,.5); }
+    #toast .title { font-weight: 700; margin-bottom: 4px; }
+  </style>
+  <style>
+    /* 3D Background */
+    #bg-root, #const-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
+    #bg-root { background: radial-gradient(1200px 600px at 10% 10%, #0b1220 0%, #060a13 40%, #03060c 100%); }
+  </style>
+</head>
+<body>
+  <div id="bg-root"><canvas id="const-canvas"></canvas></div>
+  <div class="container">
+    <div class="card">
+      <div class="header">
+        <div class="logo">🦈 <span class="shine">SharkGuard</span></div>
+        <div class="pill" title="Static UI + API">
+          <span>Netlify</span>
+          <span>•</span>
+          <span>FastAPI</span>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:6px;">Detect suspicious wallets via on‑chain behavior and anomaly detection</div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>Backend API URL</label>
+          <input id="apiUrl" placeholder="https://your-backend.example.com" />
+        </div>
+        <div>
+          <label>Etherscan API Key (optional)</label>
+          <input id="ethKey" placeholder="Paste key or leave blank" />
+        </div>
+      </div>
+      <div class="row3" style="margin-top:12px; align-items:end;">
+        <div>
+          <label>Wallet Address (0x...)</label>
+          <input id="wallet" placeholder="0x..." />
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="analyzeBtn">🔍 Analyze</button>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="healthBtn" class="btn-secondary">Check Health</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="resultCard" style="display:none;">
+      <h3>Result</h3>
+      <div id="summary"></div>
+      <div class="grid2" style="margin-top:12px;">
+        <div>
+          <h4>Features</h4>
+          <pre id="features"></pre>
+        </div>
+        <div>
+          <h4>Model</h4>
+          <pre id="model"></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="healthCard" style="display:none;">
+      <h3>Health</h3>
+      <pre id="health"></pre>
+    </div>
+
+    <div class="card">
+      <div class="muted">Tip: Host this file on Netlify. Point it to a FastAPI backend deployed on Render/Heroku/Railway.</div>
+    </div>
+  </div>
+
+  <!-- Loader & Toast -->
+  <div id="loader"><div class="spinner"></div></div>
+  <div id="toast"><div class="title" id="toastTitle"></div><div id="toastMsg"></div></div>
+
+  <script>
+    // Lightweight constellation background (no external libs)
+    (function(){
+      const canvas = document.getElementById('const-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      let w, h, dpr, points, rafId;
+      const MAX_POINTS = 130;         // number of particles
+      const SPEED = 0.25;             // base movement speed
+      const LINK_DIST = 120;          // px distance to draw lines
+      const COLOR_PT = '#6aa7ff';
+      const COLOR_LINK = 'rgba(106, 167, 255, 0.25)';
+
+      function resize(){
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        w = canvas.clientWidth = window.innerWidth;
+        h = canvas.clientHeight = window.innerHeight;
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        initPoints();
+      }
+
+      function initPoints(){
+        const count = Math.round(MAX_POINTS * Math.min(1, (w*h)/(1280*720)));
+        points = new Array(Math.max(60, count)).fill(0).map(()=>({
+          x: Math.random() * w,
+          y: Math.random() * h,
+          vx: (Math.random() - 0.5) * SPEED,
+          vy: (Math.random() - 0.5) * SPEED,
+          r: 1 + Math.random() * 1.6
+        }));
+      }
+
+      function step(){
+        ctx.clearRect(0, 0, w, h);
+        // move and draw points
+        ctx.fillStyle = COLOR_PT;
+        for (let i=0;i<points.length;i++){
+          const p = points[i];
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < -10) p.x = w+10; if (p.x > w+10) p.x = -10;
+          if (p.y < -10) p.y = h+10; if (p.y > h+10) p.y = -10;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+          ctx.fill();
+        }
+        // draw links
+        ctx.strokeStyle = COLOR_LINK;
+        for (let i=0;i<points.length;i++){
+          for (let j=i+1;j<points.length;j++){
+            const a = points[i], b = points[j];
+            const dx = a.x - b.x, dy = a.y - b.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < LINK_DIST){
+              ctx.globalAlpha = 1 - (dist / LINK_DIST);
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+              ctx.globalAlpha = 1;
+            }
+          }
+        }
+        rafId = requestAnimationFrame(step);
+      }
+
+      const prefersReduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+      function start(){ if (!prefersReduce.matches) rafId = requestAnimationFrame(step); }
+      function stop(){ if (rafId) cancelAnimationFrame(rafId); }
+
+      window.addEventListener('resize', ()=>{ stop(); resize(); start(); });
+      prefersReduce.addEventListener?.('change', ()=>{ stop(); start(); });
+      resize();
+      start();
+    })();
+    // Optional hardcoded backend URL. If set, the UI hides the input and uses this value.
+    // Example: const BACKEND_URL = "https://your-backend.onrender.com";
+    const BACKEND_URL = "";
+
+    const el = (id) => document.getElementById(id);
+
+    function getBaseUrl() {
+      if (BACKEND_URL && BACKEND_URL.trim().length > 0) return BACKEND_URL.trim();
+      return el('apiUrl').value.trim();
+    }
+
+    function badge(level) {
+      const lv = (level||'').toUpperCase();
+      let cls = 'orange';
+      if (lv === 'NORMAL' || lv === 'LOW') cls = 'green';
+      if (lv === 'SUSPICIOUS' || lv === 'HIGH') cls = 'red';
+      return `<span class="badge ${cls}">${lv||'UNKNOWN'}</span>`;
+    }
+
+    function showLoader(show=true){ el('loader').style.display = show ? 'flex' : 'none'; }
+    let toastTimer = null;
+    function showToast(title, msg, kind='success', ms=3000){
+      const t = el('toast');
+      t.className = kind;
+      el('toastTitle').textContent = title || '';
+      el('toastMsg').textContent = msg || '';
+      t.style.display = 'block';
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(()=>{ t.style.display='none'; }, ms);
+    }
+
+    async function callHealth() {
+      const base = getBaseUrl();
+      if (!base) { alert('Enter Backend API URL'); return; }
+      try {
+        showLoader(true);
+        const r = await fetch(base.replace(/\/$/, '') + '/health');
+        const data = await r.json();
+        el('health').textContent = JSON.stringify(data, null, 2);
+        el('healthCard').style.display = 'block';
+        showToast('Backend Healthy', 'Connected to API successfully.');
+      } catch (e) {
+        showToast('Health check failed', String(e), 'error', 5000);
+      }
+      finally { showLoader(false); }
+    }
+
+    async function analyze() {
+      const base = getBaseUrl();
+      const wallet = el('wallet').value.trim();
+      const key = el('ethKey').value.trim();
+      if (!base) { alert('Enter Backend API URL'); return; }
+      if (!wallet) { alert('Enter wallet address'); return; }
+
+      el('analyzeBtn').disabled = true;
+      try {
+        showLoader(true);
+        const r = await fetch(base.replace(/\/$/, '') + '/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet, etherscan_key: key || null })
+        });
+        if (!r.ok) {
+          const err = await r.text();
+          throw new Error(err);
+        }
+        const data = await r.json();
+        const model = data.model || {};
+        const label = (model.label || '').toUpperCase();
+        const score = typeof model.score === 'number' ? model.score.toFixed(3) : '—';
+        const bal = typeof data.balance_eth === 'number' ? data.balance_eth.toFixed(4) : '—';
+        el('summary').innerHTML = `Wallet: <code>${data.wallet}</code><br/>Balance: ${bal} ETH<br/>Label: ${badge(label)} Score: ${score}`;
+        el('features').textContent = JSON.stringify(data.features, null, 2);
+        el('model').textContent = JSON.stringify(model, null, 2);
+        el('resultCard').style.display = 'block';
+        showToast('Analysis Complete', `Score: ${score} • Label: ${label||'UNKNOWN'}`);
+      } catch (e) {
+        showToast('Analyze failed', String(e), 'error', 6000);
+      } finally {
+        el('analyzeBtn').disabled = false;
+        showLoader(false);
+      }
+    }
+
+    // Initialize UI
+    (function init() {
+      if (BACKEND_URL && BACKEND_URL.trim().length > 0) {
+        el('apiUrl').value = BACKEND_URL.trim();
+        // Hide the API URL field when hardcoded
+        el('apiUrl').parentElement.style.display = 'none';
+      }
+      el('healthBtn').addEventListener('click', callHealth);
+      el('analyzeBtn').addEventListener('click', analyze);
+    })();
+  </script>
+</body>
+</html>
