@@ -112,15 +112,27 @@
 
     <div class="card" id="resultCard" style="display:none;">
       <h3>Result</h3>
-      <div id="summary"></div>
-      <div class="grid2" style="margin-top:12px;">
-        <div>
-          <h4>Features</h4>
-          <pre id="features"></pre>
-        </div>
-        <div>
-          <h4>Model</h4>
-          <pre id="model"></pre>
+      <div id="verdictWrap" style="margin-top:10px;">
+        <div id="verdictBadge" class="badge orange" style="font-size:14px; padding: 6px 12px;">UNKNOWN</div>
+        <div id="verdictText" style="font-size:26px; font-weight:900; margin-top:10px; letter-spacing:.3px;">—</div>
+        <div id="verdictSub" class="muted" style="margin-top:6px;">—</div>
+      </div>
+
+      <div id="summary" style="margin-top:14px;"></div>
+      <div style="margin-top:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button id="toggleDetailsBtn" class="btn-secondary" style="width:auto; padding:10px 12px;">Show details</button>
+      </div>
+
+      <div id="detailsWrap" style="display:none; margin-top:12px;">
+        <div class="grid2">
+          <div>
+            <h4>Features</h4>
+            <pre id="features"></pre>
+          </div>
+          <div>
+            <h4>Model</h4>
+            <pre id="model"></pre>
+          </div>
         </div>
       </div>
     </div>
@@ -131,7 +143,7 @@
     </div>
 
     <div class="card">
-      <div class="muted">Tip: Host this file on Netlify. Point it to a FastAPI backend deployed on Render/Heroku/Railway.</div>
+      <div class="muted"></div>
     </div>
   </div>
 
@@ -216,8 +228,9 @@
       start();
     })();
     // Optional hardcoded backend URL. If set, the UI hides the input and uses this value.
-    // Example: const BACKEND_URL = "https://your-backend.onrender.com";
-    const BACKEND_URL = "";
+    // For the simple prototype, we default to a local FastAPI server.
+    // Run: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    const BACKEND_URL = "http://127.0.0.1:8000";
 
     const el = (id) => document.getElementById(id);
 
@@ -232,6 +245,31 @@
       if (lv === 'NORMAL' || lv === 'LOW') cls = 'green';
       if (lv === 'SUSPICIOUS' || lv === 'HIGH') cls = 'red';
       return `<span class="badge ${cls}">${lv||'UNKNOWN'}</span>`;
+    }
+
+    function setVerdict(label, score, wallet, balEth) {
+      const lv = (label || '').toUpperCase();
+      const scoreText = (typeof score === 'number') ? score.toFixed(3) : '—';
+      const balText = (typeof balEth === 'number') ? balEth.toFixed(4) : '—';
+
+      // Big, human-friendly verdict
+      let human = 'UNKNOWN';
+      let cls = 'orange';
+      let sub = `Anomaly score: ${scoreText} (higher = more suspicious)`;
+
+      if (lv === 'NORMAL') { human = 'LIKELY LEGIT'; cls = 'green'; }
+      if (lv === 'SUSPICIOUS') { human = 'NOT LEGIT / RISKY'; cls = 'red'; }
+
+      el('verdictBadge').className = `badge ${cls}`;
+      el('verdictBadge').textContent = lv || 'UNKNOWN';
+      el('verdictText').textContent = human;
+      el('verdictSub').textContent = sub;
+
+      // Compact summary
+      el('summary').innerHTML = [
+        `Wallet: <code>${wallet || '—'}</code>`,
+        `Balance: ${balText} ETH`
+      ].join('<br/>');
     }
 
     function showLoader(show=true){ el('loader').style.display = show ? 'flex' : 'none'; }
@@ -284,13 +322,12 @@
         const data = await r.json();
         const model = data.model || {};
         const label = (model.label || '').toUpperCase();
-        const score = typeof model.score === 'number' ? model.score.toFixed(3) : '—';
-        const bal = typeof data.balance_eth === 'number' ? data.balance_eth.toFixed(4) : '—';
-        el('summary').innerHTML = `Wallet: <code>${data.wallet}</code><br/>Balance: ${bal} ETH<br/>Label: ${badge(label)} Score: ${score}`;
+        setVerdict(model.label, model.score, data.wallet, data.balance_eth);
         el('features').textContent = JSON.stringify(data.features, null, 2);
         el('model').textContent = JSON.stringify(model, null, 2);
         el('resultCard').style.display = 'block';
-        showToast('Analysis Complete', `Score: ${score} • Label: ${label||'UNKNOWN'}`);
+        const scoreToast = typeof model.score === 'number' ? model.score.toFixed(3) : '—';
+        showToast('Analysis Complete', `Score: ${scoreToast} • Label: ${label||'UNKNOWN'}`);
       } catch (e) {
         showToast('Analyze failed', String(e), 'error', 6000);
       } finally {
@@ -308,6 +345,12 @@
       }
       el('healthBtn').addEventListener('click', callHealth);
       el('analyzeBtn').addEventListener('click', analyze);
+      el('toggleDetailsBtn').addEventListener('click', () => {
+        const wrap = el('detailsWrap');
+        const show = wrap.style.display === 'none';
+        wrap.style.display = show ? 'block' : 'none';
+        el('toggleDetailsBtn').textContent = show ? 'Hide details' : 'Show details';
+      });
     })();
   </script>
 </body>
