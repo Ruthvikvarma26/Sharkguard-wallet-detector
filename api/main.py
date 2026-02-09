@@ -13,12 +13,15 @@ Deploy:
 - Provide ETHERSCAN_API_KEY as an environment variable if desired (optional)
 """
 
-from typing import List, Optional, Dict, Any
-from functools import lru_cache
 import os
 import time
 import logging
+from typing import List, Optional, Dict, Any
+from functools import lru_cache
+from pathlib import Path
 
+import pandas as pd
+import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -31,8 +34,6 @@ from fakeacc.core import (
     train_and_persist_model,
 )
 from utils.etherscan import fetch_transactions, fetch_account_balance
-import pandas as pd
-from pathlib import Path
 
 MODELS_DIR = Path("models")
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -122,19 +123,21 @@ def get_model() -> Optional[SharkGuardModel]:
     """Ensure model exists; auto-train from simulated data if needed."""
     try:
         if not MODEL_PATH.exists():
-            if not SIM_FEATURES.exists():
-                # Generate synthetic data
-                import subprocess, sys
-                DATA_DIR.mkdir(parents=True, exist_ok=True)
-                subprocess.run([sys.executable, "data/simulate.py"], check=True)
-            df = pd.read_csv(SIM_FEATURES)
-            train_and_persist_model(df, path=str(MODEL_PATH))
+            # Try to train from simulated features CSV if present
+            if SIM_FEATURES.exists():
+                df = pd.read_csv(SIM_FEATURES)
+                train_and_persist_model(df, str(MODEL_PATH))
+                logger.info("Trained model from simulated features.")
+            else:
+                logger.info("No model found and no simulated data to train from.")
+                return None
+
         sg = SharkGuardModel()
         sg.load(str(MODEL_PATH))
+        logger.info("Loaded model from %s", MODEL_PATH)
         return sg
     except Exception as e:
-        # Return None; endpoints can still compute heuristics without ML
-        print("Model initialization failed:", e)
+        logger.exception("Model initialization failed")
         return None
 
 
@@ -167,15 +170,16 @@ def analyze(req: AnalyzeRequest):
         txs = req.transactions
     elif key:
         try:
-            txs = fetch_transactions(req.wallet, key, sort="desc", offset=10000)
-            balance = fetch_account_balance(req.wallet, key)
+            txs = fetch_transactions(req.wallet, key)
+            try:
+                balance = fetch_account_balance(req.wallet, key)
+            except Exception:
+                balance = 0.0
         except Exception as e:
-            # Keep going with empty txs
-            print("Etherscan fetch failed:", e)
-            txs = []
+            raise HTTPException(status_code=502, detail=f"Failed fetching transactions: {e}")
     else:
         # No key => remain empty; caller can still use /predict with custom features
-        pass
+        txs = []
 
     # Feature extraction
     df = txs_to_dataframe(txs)
@@ -194,7 +198,8 @@ def analyze(req: AnalyzeRequest):
             pred = sg.predict_score(feat)
             result["model"] = pred
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")
+            logger.exception("Model prediction failed")
+            result["model"] = {"error": str(e)}
 
     return result
 
@@ -225,10 +230,9 @@ def features(req: FeatureRequest):
         txs: List[Dict[str, Any]] = []
         if key:
             try:
-                txs = fetch_transactions(req.wallet, key, sort="desc", offset=10000)
+                txs = fetch_transactions(req.wallet, key)
             except Exception as e:
-                print("Etherscan fetch failed:", e)
-                txs = []
+                raise HTTPException(status_code=502, detail=f"Failed fetching transactions: {e}")
         df = txs_to_dataframe(txs)
         wallet = req.wallet
     else:
@@ -240,5 +244,4 @@ def features(req: FeatureRequest):
 
 # Local dev entry
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run("api.main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), reload=True)

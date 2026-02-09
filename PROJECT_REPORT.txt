@@ -1,0 +1,156 @@
+SharkGuard — Project Report
+
+1) Overview
+- Purpose: Detect suspicious or fake Web3 (Ethereum) accounts (EOAs) by analyzing on‑chain behavioral patterns and scoring them using an anomaly detection model.
+- Core Idea: Convert wallet transactions into engineered features and infer a suspicion score with IsolationForest; provide multiple frontends (web UI, Streamlit) and a CLI with a FastAPI backend.
+
+2) Problem Statement
+- Phishing/bot/fake accounts can be hard to identify by raw addresses alone.
+- Manual review of transactions is slow and inconsistent.
+- Need a reproducible pipeline to fetch or simulate data, extract meaningful features, and generate a risk score usable by apps and analysts.
+
+3) High‑Level Solution
+- Fetch on‑chain data (or simulate if unavailable), convert to a DataFrame, compute wallet‑level features.
+- Train an IsolationForest anomaly detection model and persist it.
+- Serve endpoints via FastAPI for programmatic use; provide Streamlit and a static Web UI for human interaction; include a CLI for quick tests.
+
+4) Architecture & Components
+- Frontends:
+  a) Web UI (Static): web/index.html
+     • HTML/CSS/JS single page; calls FastAPI via /health and /analyze
+     • Inputs: Backend API URL, Wallet Address, optional Etherscan API Key
+     • Shows features, model result (label + score) and backend health
+  b) Streamlit App: app.py
+     • End‑to‑end interface for entering wallet + optional API key
+     • Renders features, model results, and heuristic analysis with simple visualizations
+  c) CLI: cli.py
+     • Command: python cli.py --wallet 0x... [--etherscan_key KEY]
+     • Prints features and model result as JSON
+
+- Backend:
+  a) FastAPI Service: api/main.py
+     • Endpoints:
+       - GET /health: status, model availability
+       - POST /analyze: input wallet, optional Etherscan key or transactions; returns wallet, balance_eth, features, model result
+       - POST /predict: input features dict; returns model prediction
+       - POST /features: compute features from provided txs or fetched txs
+     • Middleware:
+       - HTTPS enforcement via ENFORCE_HTTPS
+       - CORS (FRONTEND_ORIGIN env; defaults to permissive for dev)
+       - Basic per‑IP rate limiting (RATE_LIMIT_PER_MIN)
+     • Model bootstrap:
+       - Auto‑trains if no model exists using data/simulated_features.csv (auto‑generates if missing)
+
+- Core ML & Feature Engineering:
+  a) Core Engine: fakeacc/core.py
+     • txs_to_dataframe(txs): normalizes Etherscan‑style txs, computes fields like value_eth, gas/gasPrice conversions, tx_success, is_contract_call
+     • extract_wallet_features(df, wallet): computes wallet‑level features:
+       - tx_count
+       - tx_freq_per_day
+       - lifetime_days
+       - avg_gas
+       - avg_value_eth
+       - unique_counterparties
+       - repeated_ratio
+       - hour_entropy
+       - gas_efficiency
+       - value_variance
+       - weekend_activity
+       - failed_tx_ratio
+       - contract_interaction_ratio
+     • SharkGuardModel: wraps IsolationForest + StandardScaler
+       - train(X_df), predict_score(feat_dict), save/load with feature names alignment
+  b) Heuristics: fakeacc/heuristics.py
+     • Additional rule‑based analysis for interpretability (flags, risk level, recommendations)
+  c) Data Simulation: data/simulate.py
+     • Generates synthetic wallets and transactions
+     • Produces data/simulated_features.csv
+  d) Models:
+     • models/isolation_model.joblib (and test_model.joblib present)
+
+- Utilities:
+  a) Etherscan Integration: utils/etherscan.py
+     • fetch_transactions(address, api_key, ...)
+     • fetch_account_balance(address, api_key)
+     • Used by Streamlit and FastAPI backend
+
+- Deployment & Ops:
+  a) Dockerfile, Procfile, render.yaml, netlify.toml
+     • Containerize API; Procfile for platforms like Heroku; Render/Railway recipes; Netlify for static UI
+  b) start_sharkguard.bat, run_app.py
+     • Convenience scripts for local startup
+
+5) Data Flow
+- Web UI → FastAPI /analyze → (optional Etherscan fetch) → txs_to_dataframe → extract_wallet_features → SharkGuardModel.predict_score → JSON response → UI renders features + score.
+- Streamlit/CLI flows follow similar steps locally.
+
+6) Model Details
+- Algorithm: IsolationForest (unsupervised anomaly detection)
+- Preprocessing: StandardScaler
+- Training Data: data/simulated_features.csv (auto‑generated with data/simulate.py)
+- Output: score in [0,1] (higher = more suspicious), label ∈ {"normal","suspicious"}
+- Backward compatibility: model checkpoints may include trained feature names ensuring correct alignment at prediction time.
+
+7) Key Features & Capabilities
+- Multiple interfaces: web, Streamlit, CLI, and REST API
+- Works without Etherscan key using simulated/demo features; supports real fetch when key is provided
+- Health endpoint for observability
+- Simple rate limiting & CORS configuration
+- Background visual polish in web and Streamlit UIs
+
+8) Problems Solved
+- Automates wallet behavior analysis into quantifiable features
+- Provides fast, reproducible suspicion scoring for wallets
+- Offers zero‑setup demo mode for UX testing while supporting real data for accuracy
+- Standardizes integration via REST endpoints and CLI for scripts
+
+9) How to Run (Local Dev)
+- FastAPI Backend:
+  • uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+  • Test: open http://localhost:8000/health
+- Web UI:
+  • Open web/index.html in a static server; set Backend API URL to http://localhost:8000 (or hardcode BACKEND_URL in the file)
+- Streamlit App:
+  • streamlit run app.py
+- CLI:
+  • python cli.py --wallet 0x742d35Cc6634C0532925a3b844Bc454e4438f44e [--etherscan_key YOUR_KEY]
+
+10) Configuration
+- ENV Vars:
+  • ETHERSCAN_API_KEY: optional, used by backend if not provided in requests
+  • FRONTEND_ORIGIN: comma‑separated origins for CORS (prod)
+  • ENFORCE_HTTPS: "true" to require HTTPS (prod)
+  • RATE_LIMIT_PER_MIN: requests/min per IP (default 60)
+
+11) Error Handling & Common Issues
+- NetworkError from web UI: backend not reachable, mixed‑content (HTTPS page → HTTP API), wrong URL, server not running
+- Missing model: backend auto‑generates simulated data and trains model on first run
+- Etherscan failures: backend continues with empty txs; features still computed (mostly zeros); Streamlit falls back to demo features when no key
+
+12) Security Notes
+- CORS defaults to permissive for dev; configure FRONTEND_ORIGIN in prod
+- Enable ENFORCE_HTTPS in production environments
+- Rate limit is basic and in‑memory; consider a real gateway/limiter for prod
+
+13) Tech Stack / Frameworks
+- Backend: FastAPI, Pydantic, Uvicorn
+- ML: scikit‑learn (IsolationForest), numpy, pandas, joblib
+- Frontend: Static HTML/CSS/JS (no frameworks), minimal canvas animation
+- UI (alt): Streamlit for Python‑native dashboarding
+- DevOps: Dockerfile, Procfile, Render/Heroku/Railway configs, Netlify config for static hosting
+
+14) Limitations & Future Work
+- Feature set is heuristic; can be expanded with graph metrics, clustering, protocol‑specific patterns
+- Anomaly detection is unsupervised; consider supervised models with labeled data
+- Reputation signals (allow/deny lists, ENS, scam DBs) can improve precision
+- Add pagination/caching for transaction fetching; add multi‑chain support
+
+15) Quick Test Values
+- Backend API URL: http://localhost:8000
+- Wallets (demo patterns in app.py):
+  • 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 (normal‑like)
+  • 0x742d35Cc6634C0532925a3b844Bc454e4438f44e (exchange‑like)
+  • 0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe (org‑like)
+- Etherscan API Key: optional
+
+End of Report.
